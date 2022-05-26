@@ -1,3 +1,4 @@
+from textwrap import dedent
 from typing import Any, List
 import re
 import numpy as np
@@ -10,8 +11,28 @@ from dataclasses import dataclass
 DEFAULT_CCW_DIR = r"./CCW/"
 DEFAULT_S5K_DIR = r"./S5K/"
 
-style_float = ["FLOAT", "REAL"]
-timer_datatypes = ["TON", "TOF"]
+STYLE_FLOAT = ["FLOAT", "REAL"]
+DATATYPES_TIMER = ["TON", "TOF"]
+DATATYPES_IEC_61131_3 = [
+    "BOOL",
+    "SINT",
+    "USINT",
+    "BYTE",
+    "INT",
+    "UINT",
+    "WORD",
+    "DINT",
+    "UDINT",
+    "DWORD",
+    "LINT",
+    "ULINT",
+    "LWORD",
+    "REAL",
+    "LREAL",
+    "TIME",
+    "DATE",
+    "STRING",
+]
 
 
 @dataclass
@@ -233,7 +254,7 @@ def convert_tags(df_s5k: pd.DataFrame, type_: str) -> str:
 
 def extract_timer_vars(df: pd.DataFrame):
     df_timers = pd.DataFrame(columns=df.columns)
-    for dtype in timer_datatypes:
+    for dtype in DATATYPES_TIMER:
         df_t = df[df["Data Type"] == dtype]
         df_timers = pd.concat([df_timers, df_t])
     for name in df_timers["Name"]:
@@ -256,10 +277,11 @@ def find_and_convert_vars(dirpath_ccw_vars: str, dirpath_s5k_tags: str):
         # skip locked files or w/e
         if var_file.name.startswith("~$"):
             continue
+        print(f"Converting {var_file}")
         convert(var_file, s5k_dir)
 
 
-def insert_s5k_header(tags_path: pl.Path) -> str:
+def insert_s5k_header(tags_path: pl.Path):
     original: List[str] = None
     with open(tags_path, "r") as f:
         original = f.readlines()
@@ -281,16 +303,25 @@ def vars_to_tags(df_ccw: pd.DataFrame) -> pd.DataFrame:
                 dim_num = to - frm
         return dim_num
 
+    def apply_name(name: str):
+        if "." not in name:
+            return name
+        print(f"    WARNING: Skipping variable with name '{name}'")
+        return None
+
     def apply_datatype_if_different(datatype: str, dimension: str) -> str:
         dim_num = get_dimension(datatype, dimension)
         dim = ""
         # if dim_num > 0:
         #     dim = f"[{dim_num}]"
-        if datatype in timer_datatypes:
+        if datatype in DATATYPES_TIMER:
             return "TIMER"
         if datatype == "TIME":
             return "DINT" + dim
-        return datatype + dim
+        if datatype in DATATYPES_IEC_61131_3:
+            return datatype + dim
+        print(f"    WARNING: This tool cannot currently handle datatype '{datatype}' from CCW variable export")
+        return None
 
     # def apply_scope_if_different(datatype: str):
     #     if datatype in timer_datatypes:
@@ -302,10 +333,10 @@ def vars_to_tags(df_ccw: pd.DataFrame) -> pd.DataFrame:
             rw = read_write.replace('ReadWrite', 'Read/Write')
         except AttributeError as e:
             rw = "Read/Write"
-        if datatype in timer_datatypes:
+        if datatype in DATATYPES_TIMER:
             return f"{{Constant := false, ExternalAccess := {rw}}}"
         else:
-            style = "Float" if datatype in style_float else "Decimal"
+            style = "Float" if datatype in STYLE_FLOAT else "Decimal"
             return f"{{RADIX := {style}, Constant := false, ExternalAccess := {rw}}}"
 
     def apply_usage(direction: str):
@@ -328,7 +359,7 @@ def vars_to_tags(df_ccw: pd.DataFrame) -> pd.DataFrame:
 
     if df_ccw.empty:
         return pd.DataFrame()
-    df_ccw = df_ccw[~df_ccw["Name"].str.contains('\[\d+\]')]
+    df_ccw = pd.DataFrame(df_ccw[~df_ccw["Name"].str.contains('\[\d+\]')])
     extract_timer_vars(df_ccw)
     df_ccw.fillna("", inplace=True)
     df_ccw = df_ccw.astype(str)
@@ -336,7 +367,8 @@ def vars_to_tags(df_ccw: pd.DataFrame) -> pd.DataFrame:
         columns=["TYPE", "SCOPE", "NAME", "DESCRIPTION", "DATATYPE", "SPECIFIER", "ATTRIBUTES", "USAGE"]
     )
 
-    df_s5k[["NAME", "DESCRIPTION"]] = df_ccw[["Name", "Comment"]]
+    df_s5k["DESCRIPTION"] = df_ccw["Comment"]
+    df_s5k["NAME"] = df_ccw.apply(lambda x: apply_name(name=x["Name"]), axis=1)
     df_s5k["DIMENSION"] = df_ccw.apply(lambda x: apply_dimension(datatype=x["Data Type"], dimension=x["Dimension"]), axis=1)
     df_s5k["DATATYPE"] = df_ccw.apply(lambda x: apply_datatype_if_different(datatype=x["Data Type"], dimension=x["Dimension"]), axis=1)
     # df_s5k["SCOPE"] = df_ccw.apply(lambda x: apply_scope_if_different(datatype=x["Data Type"]), axis=1)
@@ -347,7 +379,9 @@ def vars_to_tags(df_ccw: pd.DataFrame) -> pd.DataFrame:
     df_s5k["USAGE"] = df_ccw.apply(lambda x: apply_usage(direction=x["Direction"]), axis=1)
     df_s5k["DATA"] = ""
     # df_s5k["DATA"] = df_ccw.apply(lambda x: apply_data(datatype=x["Data Type"], dimension=x["Dimension"]), axis=1)
-    df_s5k.fillna("", inplace=True)
+    # drop rows with None
+    # these indicate data type or name was invalid for conversion
+    df_s5k.dropna(inplace=True)
     df_s5k = df_s5k.astype(str)
     return df_s5k
 

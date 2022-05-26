@@ -34,6 +34,11 @@ $ python convert.py <CCW files path> <S5K converted files path>
 
 This tool currently can only hand CCW variables with basic types: INT, REAL, etc. It can also handle TON and TOFF timer datatypes. Tag import will fail with other datatypes.
 
+## TODO
+
+- [ ] For S5K program output, also convert CCW structured text
+  - Note: Can be found through `<PouBody>` tag in certain `*.isaxml` files
+
 ## Contributing
 
 Please feel free to contribute with issues and pull requests.

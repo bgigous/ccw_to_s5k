@@ -7,6 +7,8 @@ import pathlib as pl
 import datetime as dt
 from dataclasses import dataclass
 
+DEFAULT_CCW_DIR = r"./CCW/"
+DEFAULT_S5K_DIR = r"./S5K/"
 
 style_float = ["FLOAT", "REAL"]
 timer_datatypes = ["TON", "TOF"]
@@ -384,5 +386,8 @@ def convert_to_s5k_addon(df_s5k: pd.DataFrame, file_ccw_vars: pl.Path, dirpath_s
 
 
 if __name__ == "__main__":
-    dirpath_ccw_vars, dirpath_s5k_tags = sys.argv[1:]
+    dirpath_ccw_vars = DEFAULT_CCW_DIR
+    dirpath_s5k_tags = DEFAULT_S5K_DIR
+    if len(sys.argv) >= 3:
+        dirpath_ccw_vars, dirpath_s5k_tags = sys.argv[1:]
     find_and_convert_vars(dirpath_ccw_vars, dirpath_s5k_tags)
